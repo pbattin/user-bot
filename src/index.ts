@@ -1,6 +1,6 @@
 /* eslint-disable comma-dangle */
 /* eslint-disable @typescript-eslint/indent */
-import { Client as DiscordClient, Message } from 'discord.js';
+import { Client as DiscordClient, Guild } from 'discord.js';
 import { timer } from 'rxjs';
 import pgPromise from 'pg-promise';
 import * as path from 'path';
@@ -9,7 +9,7 @@ import { IBumper } from './models/bumper';
 
 // initializing the library:
 const pgp = pgPromise(undefined);
-pgp.pg.defaults.max = 20; // Max pool size
+pgp.pg.defaults.max = 1; // Max pool size
 pgp.pg.defaults.ssl = process.env.DATABASE_URL
   ? {
       rejectUnauthorized: false
@@ -26,8 +26,7 @@ function sql(file: string) {
 // Create a QueryFile globally, once per file:
 const logExceptionSql = sql('./queries/log_exception.sql');
 const getBumpChannelsSql = sql('./queries/get_bump_channels.sql');
-const activeChannels: string[] = [];
-let disboardChannels: IBumper[];
+const getBumpChannelSql = sql('./queries/get_bump_channel.sql');
 const botClient = new DiscordClient();
 
 const logException = async (
@@ -43,9 +42,31 @@ const logException = async (
 };
 const getDisboardBumpChannels = async () => {
   db.manyOrNone(getBumpChannelsSql).then((channels: IBumper[]) => {
-    disboardChannels = channels;
+    channels.forEach((b) => {
+      const channel: any = botClient.channels.get(b.channelid);
+      channel.send('!d bump').catch((err: string) => {
+        logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+      });
+    });
   });
 };
+
+function bumpNewGuild(guildid: string): void {
+  db.oneOrNone(getBumpChannelSql, guildid).then((b: IBumper) => {
+    if (b) {
+      const channel: any = botClient.channels.get(b.channelid);
+      channel.send('!d bump').catch((err: string) => {
+        logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+      });
+    }
+  });
+}
+
+function setUpTimer(): void {
+  timer(0, 7230000).subscribe(() => {
+    getDisboardBumpChannels();
+  });
+}
 
 botClient.on('ready', () => {
   // eslint-disable-next-line no-console
@@ -53,31 +74,25 @@ botClient.on('ready', () => {
   botClient.user?.setActivity('bumps', {
     type: 'LISTENING'
   });
-  getDisboardBumpChannels();
+  setUpTimer();
 });
+
 botClient.login(settings.token || process.env.token);
 
-botClient.on('message', (msg: Message) => {
-  if (msg.content.toLocaleLowerCase().startsWith('!auto bump')) {
-    const bumper = disboardChannels.find(
-      (d: IBumper) => d.bumperid === msg.author.id
-    );
-    if (
-      msg.channel.id === bumper?.channelid &&
-      !activeChannels.some((c) => c === bumper?.channelid)
-    ) {
-      timer(0, 7230000).subscribe(() => {
-        msg.channel
-          .send('!d bump')
-          .then(() => activeChannels.push(bumper.channelid))
-          .catch((err) => {
-            logException(err, 'botClient.on', [
-              "botClient.on('message', (msg: Message)",
-              "msg.channel.send('!d bump')",
-              'Line: 69'
-            ]);
-          });
-      });
-    }
-  }
+botClient.on('guildCreate', (guild: Guild) => {
+  bumpNewGuild(guild.id);
 });
+
+// TODO Add commands for add channel ?
+// botClient.on('message', (msg: Message) => {
+//   if (msg.content.toLocaleLowerCase().startsWith('!auto bump')) {
+//     const bumper = disboardChannels.find(
+//       (d: IBumper) => d.bumperid === msg.author.id
+//     );
+//     if (
+//       msg.channel.id === bumper?.channelid &&
+//       !activeChannels.some((c) => c === bumper?.channelid)
+//     ) {
+//     }
+//   }
+// });
