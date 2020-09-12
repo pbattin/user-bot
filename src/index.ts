@@ -1,7 +1,9 @@
 /* eslint-disable comma-dangle */
 /* eslint-disable @typescript-eslint/indent */
 import { Client as DiscordClient, Guild } from 'discord.js';
-import { timer } from 'rxjs';
+import { timer, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+
 import pgPromise from 'pg-promise';
 import * as path from 'path';
 import settings from '../settings.json';
@@ -42,11 +44,22 @@ const logException = async (
 };
 const getDisboardBumpChannels = async () => {
   db.manyOrNone(getBumpChannelsSql).then((channels: IBumper[]) => {
+    const $stop = new Subject<any>();
+    let count = 0;
     channels.forEach((b) => {
-      const channel: any = botClient.channels.get(b.channelid);
-      channel.send('!d bump').catch((err: string) => {
-        logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
-      });
+      //  disboard allows a user to bump every 30 mins
+      timer(0, 1830000)
+        .pipe(takeUntil($stop))
+        .subscribe(() => {
+          count += 1;
+          const channel: any = botClient.channels.get(b.channelid);
+          channel.send('!d bump').catch((err: string) => {
+            logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+          });
+          if (count === channels.length - 1) {
+            $stop.next();
+          }
+        });
     });
   });
 };
