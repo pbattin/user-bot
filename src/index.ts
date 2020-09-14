@@ -42,10 +42,18 @@ const logException = async (
     misc
   });
 };
+const $bumpTimerOne: Subject<IBumper> = new Subject();
+const $bumpTimerTwo: Subject<IBumper> = new Subject();
 
-const $bumpTimer: Subject<IBumper> = new Subject();
+$bumpTimerOne.pipe().subscribe((b) => {
+  const channel: any = botClient.channels.get(b.channelid);
+  channel.send('!d bump').catch((err: string) => {
+    logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+  });
+});
+
 // Delay by 30.5 minutes
-$bumpTimer.pipe(delay(1830000)).subscribe((b) => {
+$bumpTimerTwo.pipe(delay(1830000)).subscribe((b) => {
   const channel: any = botClient.channels.get(b.channelid);
   channel.send('!d bump').catch((err: string) => {
     logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
@@ -53,9 +61,8 @@ $bumpTimer.pipe(delay(1830000)).subscribe((b) => {
 });
 const getDisboardBumpChannels = async () => {
   db.manyOrNone(getBumpChannelsSql).then((channels: IBumper[]) => {
-    channels.forEach((b) => {
-      $bumpTimer.next(b);
-    });
+    $bumpTimerOne.next(channels[0]);
+    $bumpTimerTwo.next(channels[1]);
   });
 };
 
@@ -64,15 +71,15 @@ function bumpNewGuild(guildid: string): void {
     if (b) {
       const channel: any = botClient.channels.get(b.channelid);
       channel.send('!d bump').catch((err: string) => {
-        logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+        logException(err, 'bumpNewGuild', [JSON.stringify(b)]);
       });
     }
   });
 }
 
-// Get channels every 1.5 hrs, we can bump every 30 mins.
 function setUpTimer(): void {
-  timer(0, 5400000).subscribe(() => {
+  // 2.5 hrs
+  timer(0, 7230000).subscribe(() => {
     getDisboardBumpChannels();
   });
 }
