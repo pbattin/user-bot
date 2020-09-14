@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/indent */
 import { Client as DiscordClient, Guild } from 'discord.js';
 import { timer, Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { delay } from 'rxjs/operators';
 
 import pgPromise from 'pg-promise';
 import * as path from 'path';
@@ -42,24 +42,19 @@ const logException = async (
     misc
   });
 };
+
+const $bumpTimer: Subject<IBumper> = new Subject();
+// Delay by 30.5 minutes
+$bumpTimer.pipe(delay(1830000)).subscribe((b) => {
+  const channel: any = botClient.channels.get(b.channelid);
+  channel.send('!d bump').catch((err: string) => {
+    logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+  });
+});
 const getDisboardBumpChannels = async () => {
   db.manyOrNone(getBumpChannelsSql).then((channels: IBumper[]) => {
-    const $stop = new Subject<any>();
-    let count = 0;
     channels.forEach((b) => {
-      //  disboard allows a user to bump every 30 mins
-      timer(0, 1830000)
-        .pipe(takeUntil($stop))
-        .subscribe(() => {
-          count += 1;
-          const channel: any = botClient.channels.get(b.channelid);
-          channel.send('!d bump').catch((err: string) => {
-            logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
-          });
-          if (count === channels.length - 1) {
-            $stop.next();
-          }
-        });
+      $bumpTimer.next(b);
     });
   });
 };
@@ -75,8 +70,9 @@ function bumpNewGuild(guildid: string): void {
   });
 }
 
+// Get channels every 1.5 hrs, we can bump every 30 mins.
 function setUpTimer(): void {
-  timer(0, 7230000).subscribe(() => {
+  timer(0, 5400000).subscribe(() => {
     getDisboardBumpChannels();
   });
 }
