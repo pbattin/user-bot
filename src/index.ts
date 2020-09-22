@@ -28,7 +28,6 @@ function sql(file: string) {
 // Create a QueryFile globally, once per file:
 const logExceptionSql = sql('./queries/log_exception.sql');
 const getBumpChannelsSql = sql('./queries/get_bump_channels.sql');
-const getBumpChannelSql = sql('./queries/get_bump_channel.sql');
 const botClient = new DiscordClient();
 
 const logException = async (
@@ -47,17 +46,21 @@ const $bumpTimerTwo: Subject<IBumper> = new Subject();
 
 $bumpTimerOne.pipe().subscribe((b) => {
   const channel: any = botClient.channels.get(b.channelid);
-  channel.send('!d bump').catch((err: string) => {
-    logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
-  });
+  if (channel) {
+    channel.send('!d bump').catch((err: string) => {
+      logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+    });
+  }
 });
 
 // Delay by 30.5 minutes
 $bumpTimerTwo.pipe(delay(1830000)).subscribe((b) => {
   const channel: any = botClient.channels.get(b.channelid);
-  channel.send('!d bump').catch((err: string) => {
-    logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
-  });
+  if (channel) {
+    channel.send('!d bump').catch((err: string) => {
+      logException(err, 'getDisboardBumpChannels', [JSON.stringify(b)]);
+    });
+  }
 });
 const getDisboardBumpChannels = async () => {
   db.manyOrNone(getBumpChannelsSql).then((channels: IBumper[]) => {
@@ -66,16 +69,16 @@ const getDisboardBumpChannels = async () => {
   });
 };
 
-function bumpNewGuild(guildid: string): void {
-  db.oneOrNone(getBumpChannelSql, guildid).then((b: IBumper) => {
-    if (b) {
-      const channel: any = botClient.channels.get(b.channelid);
-      channel.send('!d bump').catch((err: string) => {
-        logException(err, 'bumpNewGuild', [JSON.stringify(b)]);
-      });
-    }
-  });
-}
+// function bumpNewGuild(guildid: string): void {
+//   db.oneOrNone(getBumpChannelSql, guildid).then((b: IBumper) => {
+//     if (b) {
+//       const channel: any = botClient.channels.get(b.channelid);
+//       channel.send('!d bump').catch((err: string) => {
+//         logException(err, 'bumpNewGuild', [JSON.stringify(b)]);
+//       });
+//     }
+//   });
+// }
 
 function setUpTimer(): void {
   // 2.5 hrs
@@ -84,20 +87,24 @@ function setUpTimer(): void {
   });
 }
 
+botClient.login(settings.token || process.env.token);
+
 botClient.on('ready', () => {
   // eslint-disable-next-line no-console
   console.log('Ready!');
-  botClient.user?.setActivity('bumps', {
-    type: 'LISTENING'
-  });
+  botClient.user
+    ?.setActivity('bumps', {
+      type: 'LISTENING'
+    })
+    .catch((err) => {
+      logException(err, 'setActivity', []);
+    });
   setUpTimer();
 });
 
-botClient.login(settings.token || process.env.token);
-
-botClient.on('guildCreate', (guild: Guild) => {
-  bumpNewGuild(guild.id);
-});
+// botClient.on('guildCreate', (guild: Guild) => {
+//   bumpNewGuild(guild.id);
+// });
 
 // TODO Add commands for add channel ?
 // botClient.on('message', (msg: Message) => {
